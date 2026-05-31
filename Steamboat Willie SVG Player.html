@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Steamboat Willie SVG Player</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        #player-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            aspect-ratio: 4 / 3;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #ffffff;
+        }
+
+        #video-frame {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        /* Overlay for user interaction due to browser Autoplay Policy */
+        #interaction-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            cursor: pointer;
+            transition: opacity 0.3s ease;
+        }
+
+        #interaction-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .play-btn {
+            background-color: #000000;
+            color: #ffffff;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            transition: transform 0.2s ease, background-color 0.2s ease;
+        }
+
+        .play-btn:hover {
+            transform: scale(1.05);
+            background-color: #222222;
+        }
+
+        .notice {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #666666;
+            text-align: center;
+            max-width: 80%;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.8);
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: #000000;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        #player-container:hover #controls {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="interaction-overlay">
+        <button class="play-btn">▶ PLAY STEAMBOAT WILLIE</button>
+        <p class="notice">Click anywhere to unlock audio and start the SVG animation sequence.</p>
+    </div>
+
+    <div id="player-container">
+        <img id="video-frame" src="https://cdn.jsdelivr.net/gh/Stormwindsky/SBWSVGV@main/Frames/frame_00000.svg" alt="Steamboat Willie Frame">
+        <div id="controls">Frame: <span id="frame-number">00000</span> / 00999</div>
+    </div>
+
+    <audio id="bg-audio" preload="auto">
+        <source src="https://raw.githubusercontent.com/Stormwindsky/SBWSVGV/main/Audio/Audio.wav?raw=true" type="audio/wav">
+        Your browser does not support the audio element.
+    </audio>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const audio = document.getElementById('bg-audio');
+            const videoFrame = document.getElementById('video-frame');
+            const frameNumberDisplay = document.getElementById('frame-number');
+            const overlay = document.getElementById('interaction-overlay');
+
+            const TOTAL_FRAMES = 1000; 
+            
+            // CORRECTION : Utilisation de jsDelivr au lieu de raw.githubusercontent pour forcer le bon type MIME (image/svg+xml)
+            const BASE_FRAME_URL = 'https://cdn.jsdelivr.net/gh/Stormwindsky/SBWSVGV@main/Frames/frame_';
+            
+            let currentFrameIndex = 0;
+            let animationFrameId = null;
+            let lastFrameTime = 0;
+            
+            const FPS = 24;
+            const FRAME_DURATION = 1000 / FPS;
+
+            // Système de pré-chargement
+            const preloadedImages = {};
+            function preloadNextFrames(currentIndex, count = 5) {
+                for (let i = 1; i <= count; i++) {
+                    const nextIndex = currentIndex + i;
+                    if (nextIndex < TOTAL_FRAMES && !preloadedImages[nextIndex]) {
+                        const img = new Image();
+                        img.src = BASE_FRAME_URL + String(nextIndex).padStart(5, '0') + '.svg';
+                        preloadedImages[nextIndex] = img;
+                    }
+                }
+            }
+
+            // Boucle principale
+            function renderSequence(timestamp) {
+                if (!lastFrameTime) lastFrameTime = timestamp;
+                
+                if (!audio.paused && audio.currentTime > 0) {
+                    const expectedFrame = Math.floor(audio.currentTime * FPS);
+                    if (expectedFrame !== currentFrameIndex && expectedFrame < TOTAL_FRAMES) {
+                        currentFrameIndex = expectedFrame;
+                        updateFrame(currentFrameIndex);
+                    }
+                    
+                    if (expectedFrame >= TOTAL_FRAMES - 1) {
+                        currentFrameIndex = TOTAL_FRAMES - 1;
+                        updateFrame(currentFrameIndex);
+                        audio.pause();
+                        cancelAnimationFrame(animationFrameId);
+                        return;
+                    }
+                } else {
+                    const elapsed = timestamp - lastFrameTime;
+                    if (elapsed >= FRAME_DURATION) {
+                        currentFrameIndex++;
+                        if (currentFrameIndex >= TOTAL_FRAMES) {
+                            currentFrameIndex = TOTAL_FRAMES - 1;
+                            cancelAnimationFrame(animationFrameId);
+                            return;
+                        }
+                        updateFrame(currentFrameIndex);
+                        lastFrameTime = timestamp - (elapsed % FRAME_DURATION);
+                    }
+                }
+
+                preloadNextFrames(currentFrameIndex);
+                animationFrameId = requestAnimationFrame(renderSequence);
+            }
+
+            function updateFrame(index) {
+                const formattedIndex = String(index).padStart(5, '0');
+                videoFrame.src = BASE_FRAME_URL + formattedIndex + '.svg';
+                frameNumberDisplay.textContent = formattedIndex;
+            }
+
+            function startPlayer() {
+                overlay.classList.add('hidden');
+                
+                audio.play().then(() => {
+                    lastFrameTime = 0;
+                    animationFrameId = requestAnimationFrame(renderSequence);
+                }).catch((error) => {
+                    console.error("Audio playback failed. Starting animation without audio:", error);
+                    lastFrameTime = 0;
+                    animationFrameId = requestAnimationFrame(renderSequence);
+                });
+            }
+
+            overlay.addEventListener('click', startPlayer);
+            
+            audio.addEventListener('ended', () => {
+                cancelAnimationFrame(animationFrameId);
+            });
+        });
+    </script>
+</body>
+</html>
